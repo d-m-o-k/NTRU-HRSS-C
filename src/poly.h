@@ -30,7 +30,8 @@ void poly_mul_2(poly *res, const poly *a, const poly *b);
 void poly_red_3(poly *res, const poly *a); // projection mod 3
 void poly_red_2(poly *res, const poly *a); // projection mod 2
 
-int poly_inv_3(poly *res, const poly *a); // int pour retourner un statut dans le cas de non-inversibilité
+// ces fonctions retournent 1 si l'inversion réussit 0 sinon
+int poly_inv_3(poly *res, const poly *a); // inverse a mod 3, phi_N
 int poly_inv_2(poly *res, const poly *a); // pour la première étape du lifting d'Hensel pour le calcul d'inverse modulo q
 int poly_inv_q(poly *res, const poly *a);
 
