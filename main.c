@@ -1,6 +1,10 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "poly.h"
+#include "coding.h"
+#include "sample.h"
+#include "ntru.h"
 #include "param.h"
 
 /* Project for a minimally dependent, fully functional and secure NTRU-HRSS implementation in C */
@@ -16,69 +20,53 @@ static void print_poly(const char *name, const poly *ptr) {
     printf(" ]\n");
 }
 
-int main(void) {
-    printf("Test pour l'inversion modulo (3, phi_N)");
-    poly a, inv, prod;
-
-    poly_zero(&a);
-    a.coef[2] = 1;
-    a.coef[5] = 1;
-    a.coef[47] = -1;
-    a.coef[477] = -1;
-
-
-    if (!poly_inv_3(&inv, &a)) {
-        printf("Inverse non trouvé (a = 0)\n");
-        return 1;
+static int8_t poly_cmp_q(const poly *a, const poly *b){
+    int16_t c = a->coef[0] - b->coef[0];   // constante candidate
+    for(size_t i = 1; i < N; i++){
+        if ((int16_t)(a->coef[i] - b->coef[i]) != c) return 0;
     }
-
-    print_poly("a   ", &a);
-    print_poly("inv ", &inv);
-
-    poly_mul_3(&prod, &a, &inv);
-    print_poly("a*inv", &prod);
-
-
-    printf("Test pour l'inversion modulo (2, phi_N)");
-    poly_zero(&a);
-    //polynôme quelconque
-    a.coef[5] = 1;
-    a.coef[47] = 1;
-    a.coef[532] = 1;
-
-    if (!poly_inv_2(&inv, &a)) {
-        printf("Inverse non trouvé (a = 0)\n");
-        return 1;
-    }
-
-    print_poly("a   ", &a);
-    print_poly("inv ", &inv);
-
-    poly_mul_2(&prod, &a, &inv);
-    print_poly("a*inv", &prod);
-
-
-    printf("Test pour l'inversion modulo (q, phi_N)");
-    poly_zero(&a);
-    //polynôme quelconque
-    a.coef[5] = 1;
-    a.coef[47] = -61;
-    a.coef[532] = 74;
-
-    if (!poly_inv_q(&inv, &a)) {
-        printf("Inverse non trouvé (a = 0)\n");
-        return 1;
-    }
-
-    print_poly("a   ", &a);
-    print_poly("inv ", &inv);
-
-    poly_mul_q(&prod, &a, &inv);
-    print_poly("a*inv", &prod);
-
-
-    return 0;
+    return 1;
 }
 
+static int8_t poly_cmp_3(const poly *a, const poly *b){
+    int16_t c = (a->coef[0] - b->coef[0]) % 3;
+    if (c < 0) c += 3;
+    for(size_t i = 1; i < N; i++){
+        int16_t d = (a->coef[i] - b->coef[i]) % 3;
+        if (d < 0) d += 3;
+        if (d != c) return 0;
+    }
+    return 1;
+}
 
+static int8_t poly_cmp(const poly *a, const poly *b) {
+    int8_t eq = 1;
+    for (size_t i = 0; i < N; i++) {
+        eq &= (a->coef[i] == b->coef[i]);
+    }
+    return eq;
+}
 
+int main(void) {
+    uint8_t seed_keygen[32] = {0};
+    uint8_t seed_encrypt[32] = {2};
+
+    poly f; poly h; poly g; poly c; poly m = {{1}}; poly mpr;
+    m.coef[4] = -1; m.coef[71] = -1; m.coef[423] = 1;
+
+    print_poly("m", &m);
+    ntru_hrss_keygen(&f, &h, seed_keygen);
+    ntru_hrss_encrypt(&c, &m, &h, seed_encrypt);
+    ntru_hrss_decrypt(&mpr, &c, &f);
+
+    print_poly("mpr", &mpr);
+
+    int8_t eq = 1;
+    for(size_t i = 0; i < N; i++){
+        eq &= (m.coef[i] == mpr.coef[i]);
+    }
+
+    if (eq){printf("Success!!\n");}
+
+    return 1;
+}

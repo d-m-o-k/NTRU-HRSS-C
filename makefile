@@ -2,12 +2,13 @@ CC      := gcc
 CFLAGS  := -std=c11 -Wall -Wextra -O2 -g -Isrc -I.
 LDLIBS  := -lm
 
-TARGET  := test_poly
-SRCS    := main.c src/poly.c
+TARGET  := test
+SRCS    := main.c src/poly.c src/coding.c src/sample.c src/fips202.c src/ntru.c src/keccakf1600.c
+HDRS    := src/poly.h src/coding.h src/sample.h src/fips202.h src/ntru.h src/keccakf1600.h param.h
 
 all: $(TARGET)
 
-$(TARGET): $(SRCS) src/poly.h param.h
+$(TARGET): $(SRCS) $(HDRS)
 	$(CC) $(CFLAGS) $(SRCS) -o $(TARGET) $(LDLIBS)
 
 run: all

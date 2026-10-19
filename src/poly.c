@@ -189,25 +189,24 @@ int poly_inv_3(poly *res, const poly *a){
     poly_zero(&B); B.coef[0] = 1;
     poly_zero(&C);
     poly_zero(&G);
-    for (size_t i = 0; i < N; i++){G.coef[i] = 1;}
+    for (size_t i = 0; i < N; i++) G.coef[i] = 1;
 
     poly_zero(&shiftl);
-    shiftl.coef[1] = 1; // X
+    shiftl.coef[1] = 1;                                      // X
     poly_zero(&shiftr);
-    for (size_t j = 0; j < N - 1; j++){shiftr.coef[j] = -1;} // X^(N-1) + -(1 + X + ... + X^(N-2))
+    for (size_t j = 0; j < N - 1; j++) shiftr.coef[j] = -1;  // X^{-1} mod Phi_N
 
-        // d = 1 ssi F = 1 (polynôme constant 1)
     int16_t d = (F.coef[0] == 1);
     for (size_t j = 1; j < N; j++) d &= (F.coef[j] == 0);
 
-    poly FF, CC, BB;
+    poly FF, CC, BB, CC2, BB2;
 
-    // Borne du papier pour le for
     size_t n_iter = 4 * (N - 1);
 
     for (size_t iter = 0; iter < n_iter; iter++) {
         // F̄ = rshift(F), C̄ = lshift(C), k̄ = k + 1
-        poly_mul_3(&FF, &F, &shiftr);
+        for (size_t j = 0; j < N - 1; j++) FF.coef[j] = F.coef[j + 1];
+        FF.coef[N - 1] = 0;
         poly_mul_3(&CC, &C, &shiftl);
         size_t k_bar = k + 1;
 
@@ -216,16 +215,15 @@ int poly_inv_3(poly *res, const poly *a){
         int16_t m1 = d | f0_nz;
         int16_t mask1 = -m1;
 
-        // F = F if m1 else F̄ ; C = C if m1 else C̄ ; k = k if m1 else k̄
         for (size_t j = 0; j < N; j++) {
             F.coef[j] = (F.coef[j] & mask1) | (FF.coef[j] & ~mask1);
             C.coef[j] = (C.coef[j] & mask1) | (CC.coef[j] & ~mask1);
         }
         k = (k & (size_t)mask1) | (k_bar & ~(size_t)mask1);
 
-        // Recalcul de d = 1 ssi F = 1
-        d = (F.coef[0] == 1);
-        for (size_t j = 1; j < N; j++){d &= (F.coef[j] == 0);}
+        // Recalcul de d = +-1 ssi F = 1
+        d = (F.coef[0]*F.coef[0]  == 1);
+        for (size_t j = 1; j < N; j++) d &= (F.coef[j] == 0);
 
         // S = d | ~m1
         int16_t S = d | (1 - m1);
@@ -236,17 +234,14 @@ int poly_inv_3(poly *res, const poly *a){
         for (int j = N - 1; j >= 0; j--) {
             int16_t fnz = (F.coef[j] != 0);
             int16_t gnz = (G.coef[j] != 0);
-            int16_t both = fnz & gnz;
             int16_t diff = fnz ^ gnz;
             int16_t take = diff & (1 - decided);
-            int16_t take_eq = both & (1 - decided);
             int16_t mask_take = -take;
-            int16_t mask_eq = -take_eq;
-            cmp_f_g = (fnz & mask_take) | (1 & mask_eq) | (cmp_f_g & ~(mask_take | mask_eq));
-            decided |= take | take_eq;
+            cmp_f_g = (fnz & mask_take) | (cmp_f_g & ~mask_take);
+            decided |= diff;
         }
 
-        // m2 = S | cmp_f_g, on écvhange si m2 = 0
+        // Swap conditionnel si m2 = S | cmp_f_g vaut 0
         int16_t m2 = S | cmp_f_g;
         int16_t mask2 = -m2;
         for (size_t j = 0; j < N; j++) {
@@ -258,39 +253,56 @@ int poly_inv_3(poly *res, const poly *a){
             C.coef[j] = (tC & mask2) | (tB & ~mask2);
         }
 
-        // FF = F - G, BB = B - C
-        poly_sub_3(&FF, &F, &G);
-        poly_sub_3(&BB, &B, &C);
+        // Ratio = F_0 / G_0 dans Z_3 (F_0 * G_0 puisque l'inverse de ±1 est lui-même)
+        // Dans Z_3 : 1*1 = 1, (-1)*(-1) = 1, 1*(-1) = -1, (-1)*1 = -1
+        int16_t ratio = F.coef[0] * G.coef[0];
+        int16_t mask_neg = -(ratio < 0);  // tout à 1 si ratio = -1
 
-        // F = F if S else F̄ ; B = B if S else B̄
+        // FF = F - ratio*G, en sélectionnant entre F-G et F+G
+        poly_sub_3(&FF, &F, &G);
+        poly_add_3(&CC2, &F, &G);
+        for (size_t j = 0; j < N; j++) {
+            FF.coef[j] = (FF.coef[j] & ~mask_neg) | (CC2.coef[j] & mask_neg);
+        }
+
+        // BB = B - ratio*C
+        poly_sub_3(&BB, &B, &C);
+        poly_add_3(&BB2, &B, &C);
+        for (size_t j = 0; j < N; j++) {
+            BB.coef[j] = (BB.coef[j] & ~mask_neg) | (BB2.coef[j] & mask_neg);
+        }
+
+        // F = F si S=1, sinon FF ; B = B si S=1, sinon BB
         for (size_t j = 0; j < N; j++) {
             F.coef[j] = (F.coef[j] & maskS) | (FF.coef[j] & ~maskS);
             B.coef[j] = (B.coef[j] & maskS) | (BB.coef[j] & ~maskS);
         }
 
-        //recalcul de d encore
-        d = (F.coef[0] == 1);
+        // Recalcul de d
+        d = (F.coef[0]*F.coef[0] == 1);
         for (size_t j = 1; j < N; j++) d &= (F.coef[j] == 0);
     }
 
-    //élimination constant-time du facteur X^k dans l'almost-inverse par multiplication par X^-k
+    // Élimination du facteur X^k
     size_t e = (N - (k % N)) % N;
-    int16_t mask_last = -(e == N - 1);   // tout à 1 si e == N-1, sinon 0
+    int16_t mask_last = -(e == N - 1);
 
     poly Xe;
     poly_zero(&Xe);
     for (size_t i = 0; i < N; i++) {
         int16_t is_e     = (i == e);
         int16_t is_lt_N1 = (i < N - 1);
-        int16_t is_neg   = is_lt_N1 & mask_last;          // 1 si on doit mettre -1
+        int16_t is_neg   = is_lt_N1 & mask_last;
         int16_t val      = (is_e & ~mask_last) | (-is_neg);
         Xe.coef[i] = val;
     }
 
     poly_mul_3(res, &B, &Xe);
+    int16_t mask_sign = -(F.coef[0] < 0);
+    for (size_t j = 0; j < N; j++) res->coef[j] = (res->coef[j] & ~mask_sign) | (-res->coef[j] & mask_sign);
 
-    int output = (F.coef[0] == 1);
-    for (size_t j = 1; j < N; j++){output &= (F.coef[j] == 0);}
+    int output = (F.coef[0]*F.coef[0] == 1);
+    for (size_t j = 1; j < N; j++) output &= (F.coef[j] == 0);
     return output;
 }
 
@@ -396,7 +408,7 @@ int poly_inv_2(poly *res, const poly *a){
     return output;
 }
 
-//fonctions de calcul d'un inverse modulo q (qu'on suppose égal à 8192 ici)
+//fonction de calcul d'un inverse modulo q (qu'on suppose égal à 8192 ici)
 int poly_inv_q(poly *res, const poly *a){
     poly B;
     poly tempB;

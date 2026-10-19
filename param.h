@@ -13,7 +13,7 @@
 #define q NTRU_Q
 #define p NTRU_P
 
-// taille des buffers
+// taille des buffers pour l'encodage
 #define NTRU_PUBLICKEYBYTES 1138
 #define NTRU_SECRETKEYBYTES 1450
 #define NTRU_CIPHERTEXTBYTES 1138

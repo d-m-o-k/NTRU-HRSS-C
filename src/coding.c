@@ -4,6 +4,20 @@
 #include "param.h"
 #include "poly.h"
 
+static inline int16_t centering_3(int64_t a){
+    a %= 3; // pour le moment la fonction suppose que p sera toujours 3
+    a -= 3 * (a == 2);
+    a += 3 * (a == -2);
+    return a;
+}
+
+static inline int16_t centering_q(int64_t a){
+    a &= (q - 1); // masque pour le modulo car q est nécessairement une puissance de 2
+    a -= q * (a > (q/2 - 1));
+    return a;
+}
+
+
 void Rq_encode(int8_t bits[(N+7)/8], poly *a){
     //on initialise le buffer à 0
     for (size_t i = 0; i < NTRU_CIPHERTEXTBYTES; i++) {
@@ -43,7 +57,7 @@ void Rq_decode(poly *a, const uint8_t *in) {
             uint8_t bit = (in[byte_id] >> byte_pos) & 1;
 
             v |= (bit << j);
-            bit_idx++;
+            bit_id++;
         }
 
         // écriture et accumulation pour v_{n-1}
@@ -53,6 +67,7 @@ void Rq_decode(poly *a, const uint8_t *in) {
 
     uint16_t v_last = (q + (sum % q)) % q;
     a->coef[N - 1] = centering_q(v_last);
+    }
 }
 
 #define S3_BYTES ((N - 1) / 5)   // 140 pour N = 701
