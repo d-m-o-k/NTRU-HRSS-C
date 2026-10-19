@@ -19,17 +19,20 @@ static inline int16_t centering_q(int64_t a){
     return a;
 }
 
-
-// pour le KAT : flux de bit non continu à vérifier plus tard
-
 void sample_T(poly *res, const uint8_t seed[32]){
     uint8_t ubytes[N - 1];
     shake256(ubytes, sizeof(ubytes), seed, 32);
 
     poly_zero(res);
-    for(size_t i = 0; i < N - 1; i++){
-        int16_t x = (((ubytes[i])&1) + ((ubytes[i]>>1)&1) - ((ubytes[i]>>2)&1) - ((ubytes[i]>>3)&1)); //pour le moment on ne prend pas le flux continu des bits pour simplifier donc non-KAT!
-        res->coef[i] = centering_3(x);
+
+    for(size_t i = 0; i < (N - 1)/2; i++){
+        for(size_t j = 0; j < 2; j++){
+        int16_t x = ((((ubytes[i])>>(4*j))&1)
+                    + ((ubytes[i]>>(4*j + 1))&1)
+                    - ((ubytes[i]>>(4*j + 2))&1)
+                    - ((ubytes[i]>>(4*j + 3))&1)); //extraction du flux KAT-compatible et continue, selon la spec
+        res->coef[2*i+j] = centering_3(x);
+        }
     }
 }
 

@@ -18,9 +18,9 @@ static inline int16_t centering_q(int64_t a){
 }
 
 
-void Rq_encode(int8_t bits[(N+7)/8], poly *a){
+void Rq_encode(int8_t bits[NTRU_CIPHERTEXTBYTES ], const poly *a){
     //on initialise le buffer à 0
-    for (size_t i = 0; i < NTRU_CIPHERTEXTBYTES; i++) {
+    for (size_t i = 0; i < NTRU_CIPHERTEXTBYTES; i++){
         bits[i] = 0;
     }
 
@@ -29,7 +29,7 @@ void Rq_encode(int8_t bits[(N+7)/8], poly *a){
     for(size_t i = 0; i < N - 1; i++){
         uint16_t v = a->coef[i] & (q - 1); // on ramène le coefficient dans [0, q - 1]
 
-        for (int j = 12; j >= 0; j--) {
+        for (int j = 12; j >= 0; j--){
             uint8_t bit = (v >> j) & 1;
 
             // variables de position dans le bitstring, quels int8_t et quel bit de cet int8_t
@@ -43,7 +43,7 @@ void Rq_encode(int8_t bits[(N+7)/8], poly *a){
     }
 }
 
-void Rq_decode(poly *a, const uint8_t *in) {
+void Rq_decode(poly *a, const uint8_t in[NTRU_CIPHERTEXTBYTES]) {
     size_t bit_id = 0;
     int32_t sum = 0; // pour le calcul de v_{n-1}
 
@@ -63,11 +63,10 @@ void Rq_decode(poly *a, const uint8_t *in) {
         // écriture et accumulation pour v_{n-1}
         a->coef[i] = centering_q(v);
         sum -= v;
-
+    }
 
     uint16_t v_last = (q + (sum % q)) % q;
     a->coef[N - 1] = centering_q(v_last);
-    }
 }
 
 #define S3_BYTES ((N - 1) / 5)   // 140 pour N = 701

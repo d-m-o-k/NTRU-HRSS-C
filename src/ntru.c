@@ -13,12 +13,17 @@ int ntru_hrss_keygen(poly *f, poly *h, const uint8_t seed[32]){
     poly g;poly fq;poly phi_1;poly three;
 
     uint8_t out[64];uint8_t seed_f[32];uint8_t seed_g[32];
-    shake256(out, 64, seed, 32);
+    uint8_t buf[33];
+    buf[0] = 0x00;              // préfixe "clé" (f, g)
+    memcpy(buf + 1, seed, 32);
+    shake256(out, 64, buf, 33);
+
     memcpy(seed_f, out, 32);
     memcpy(seed_g, out + 32, 32);
 
-    sample_T_plus(&g, seed_f);
-    sample_T_plus(f, seed_g);
+    sample_T_plus(f, seed_f);
+    sample_T_plus(&g, seed_g);
+
 
     if (!poly_inv_q(&fq, f)){return 0;} // f_q = (1/f) mod q keygen échoue si = 0
 
@@ -34,7 +39,7 @@ int ntru_hrss_keygen(poly *f, poly *h, const uint8_t seed[32]){
 
 void ntru_hrss_encrypt(poly *c, const poly *m, const  poly *h, const uint8_t seed[32]){
     poly r;
-    sample_nonce_r(&r, seed);
+    sample_T(&r, seed);
 
     poly_mul_q(c, h, &r);
     poly_add_q(c, c, m); // c = h*r + m [q]
@@ -53,7 +58,7 @@ int ntru_hrss_decrypt(poly *m, const poly *c, const poly *f){
     poly_red_3(&a, &a);
 
     poly_red_3(&fp, f);
-    poly_inv_3(&fp, &fp);
+    if (!poly_inv_3(&fp, &fp)){return 0;}
 
     poly_mul_3(m, &a, &fp);
 

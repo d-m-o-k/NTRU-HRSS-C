@@ -52,7 +52,7 @@ int main(void) {
     uint8_t seed_encrypt[32] = {2};
 
     poly f; poly h; poly g; poly c; poly m = {{1}}; poly mpr;
-    m.coef[4] = -1; m.coef[71] = -1; m.coef[423] = 1;
+    m.coef[4] = -1; m.coef[71] = -1; m.coef[423] = 1; m.coef[555] = 1;
 
     print_poly("m", &m);
     ntru_hrss_keygen(&f, &h, seed_keygen);
@@ -66,7 +66,23 @@ int main(void) {
         eq &= (m.coef[i] == mpr.coef[i]);
     }
 
-    if (eq){printf("Success!!\n");}
+    if (eq){printf("Encryption decryption success!!\n");}
+
+    poly code; int8_t bits[NTRU_CIPHERTEXTBYTES] = {{0}};
+    poly_zero(&code);
+    code.coef[4] = -1; code.coef[71] = -1; code.coef[423] = 1; code.coef[555] = 1;
+
+    print_poly("code Rq", &code);
+    Rq_encode(bits, &code);
+    Rq_decode(&code, bits);
+    print_poly("decode Rq", &code);
+
+    int8_t bits2[140] = {{0}};
+    print_poly("code S3", &code);
+    S3_encode(bits2, &code);
+    S3_decode(&code, bits2);
+    print_poly("decode S3", &code);
+
 
     return 1;
 }
