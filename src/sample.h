@@ -11,5 +11,6 @@ void sample_T_plus(poly *res, const uint8_t seed[32]); // corrige un polynôme d
 
 void sample_nonce_r(poly *res, const uint8_t seed[32]); //génération du nonce r
 
+void sample_KAT_rm(poly *r, poly *m, const uint8_t seed[32]); // génération simultanée de m et r pour la KAT
 
 #endif

@@ -1,88 +1,164 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 #include "poly.h"
 #include "coding.h"
 #include "sample.h"
 #include "ntru.h"
 #include "param.h"
+#include "rng.h"
 
-/* Project for a minimally dependent, fully functional and secure NTRU-HRSS implementation in C */
-
-//pour le moment, main.c sert pour les tests, en l'occurence les tests pour poly.c
-
-// fonction qui print les coefficient non-nuls sou la forme a_i = [ i:a_i ]
-static void print_poly(const char *name, const poly *ptr) {
-    printf("%s = [", name);
-    for (size_t i = 0; i < N; i++) {
-        if (ptr->coef[i] != 0) printf(" %zu:%d", i, ptr->coef[i]);
+static void hex_to_bytes(const char *hex, uint8_t *out, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        unsigned int val;
+        if (sscanf(hex + 2 * i, "%2x", &val) != 1) {
+            val = 0;
+        }
+        out[i] = (uint8_t)val;
     }
-    printf(" ]\n");
 }
 
-static int8_t poly_cmp_q(const poly *a, const poly *b){
-    int16_t c = a->coef[0] - b->coef[0];   // constante candidate
-    for(size_t i = 1; i < N; i++){
-        if ((int16_t)(a->coef[i] - b->coef[i]) != c) return 0;
+static void bytes_to_hex(char *out, const uint8_t *in, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        sprintf(out + 2 * i, "%02X", in[i]);
     }
-    return 1;
+    out[2 * len] = '\0';
 }
 
-static int8_t poly_cmp_3(const poly *a, const poly *b){
-    int16_t c = (a->coef[0] - b->coef[0]) % 3;
-    if (c < 0) c += 3;
-    for(size_t i = 1; i < N; i++){
-        int16_t d = (a->coef[i] - b->coef[i]) % 3;
-        if (d < 0) d += 3;
-        if (d != c) return 0;
+static int parse_req_seed(const char *filename, int target_count, uint8_t seed[48]) {
+    FILE *fp = fopen(filename, "r");
+    if (!fp) {
+        perror("Erreur d'ouverture du fichier .req");
+        return 0;
     }
-    return 1;
+
+    char line[1024];
+    int current_count = -1;
+    int found = 0;
+
+    while (fgets(line, sizeof(line), fp)) {
+        // Détecte le début d'un bloc de test
+        if (sscanf(line, "count = %d", &current_count) == 1) {
+            if (current_count == target_count) {
+                found = 1;
+            } else if (found) {
+                break;
+            }
+        }
+
+        // Dès qu'on a le bon count, on extrait la seed
+        if (found && strncmp(line, "seed = ", 7) == 0) {
+            hex_to_bytes(line + 7, seed, 48);
+            break;
+        }
+    }
+
+    fclose(fp);
+    return found;
 }
 
-static int8_t poly_cmp(const poly *a, const poly *b) {
-    int8_t eq = 1;
-    for (size_t i = 0; i < N; i++) {
-        eq &= (a->coef[i] == b->coef[i]);
+static void run_kat_test(int count, const char *req_file, const char *ans_file) {
+    uint8_t seed[48] = {0};
+    uint8_t seed_keygen[32];
+    uint8_t seed_encrypt[32];
+
+    printf("Recherche du test count = %d dans %s...\n", count, req_file);
+    if (!parse_req_seed(req_file, count, seed)) {
+        printf("ERREUR Impossible de trouver le count = %d dans le fichier.\n", count);
+        return;
     }
-    return eq;
+    printf("Seed trouvée\n");
+
+    // Initialisation du DRBG NIST
+    randombytes_init(seed, NULL, 256);
+    randombytes(seed_keygen, 32);
+    randombytes(seed_encrypt, 32);
+
+    poly f, h, r, m, c, f_inv_3;
+
+    // KeyGen (utilise la seed de 32 octets générée par le DRBG)
+    if (!ntru_hrss_keygen(&f, &h, seed_keygen)) {
+        printf("ERREUR La génération de clé a échoué.\n");
+        return;
+    }
+
+    // Encodage de la clé publique
+    uint8_t pk_bytes[NTRU_PUBLICKEYBYTES];
+    Rq_encode(pk_bytes, &h);
+
+    // On construit la clé secrète au format standard
+    // sk = S3_encode(f) || S3_encode(f^-1 mod 3) || pk
+    uint8_t sk_bytes[NTRU_SECRETKEYBYTES] = {0};
+    uint8_t f_enc[140];
+    uint8_t f_inv_enc[140];
+
+    poly_inv_3(&f_inv_3, &f); // f est toujours inversible par construction
+
+    S3_encode(f_enc, &f);
+    S3_encode(f_inv_enc, &f_inv_3);
+
+    memcpy(sk_bytes, f_enc, 140);
+    memcpy(sk_bytes + 140, f_inv_enc, 140);
+    memcpy(sk_bytes + 280, pk_bytes, NTRU_PUBLICKEYBYTES);
+    // Le reste est paddé à 0
+
+    // Sampling de r et m à partir de la seed (gère le SHAKE de 1408 octets en interne)
+    sample_KAT_rm(&r, &m, seed_encrypt);
+
+    // Chiffrement hrss c = h*r + m (q)
+    poly_mul_q(&c, &h, &r);
+    poly_add_q(&c, &c, &m);
+
+    // Encodage du chiffré
+    uint8_t ct_bytes[NTRU_CIPHERTEXTBYTES];
+    Rq_encode(ct_bytes, &c);
+
+    // On écrit dans le fichier .ans
+    FILE *fp_ans = fopen(ans_file, "a");
+    if (!fp_ans) {
+        perror("ERREUR impossible d'ouvrir le fichier .ans");
+        return;
+    }
+
+    // écriture HEXA
+    char *hex_pk = malloc(NTRU_PUBLICKEYBYTES * 2 + 1);
+    char *hex_sk = malloc(NTRU_SECRETKEYBYTES * 2 + 1);
+    char *hex_ct = malloc(NTRU_CIPHERTEXTBYTES * 2 + 1);
+    char hex_seed[97];
+
+    bytes_to_hex(hex_pk, pk_bytes, NTRU_PUBLICKEYBYTES);
+    bytes_to_hex(hex_sk, sk_bytes, NTRU_SECRETKEYBYTES);
+    bytes_to_hex(hex_ct, ct_bytes, NTRU_CIPHERTEXTBYTES);
+    bytes_to_hex(hex_seed, seed, 48);
+
+    fprintf(fp_ans, "count = %d\n", count);
+    fprintf(fp_ans, "seed = %s\n", hex_seed);
+    fprintf(fp_ans, "pk = %s\n", hex_pk);
+    fprintf(fp_ans, "sk = %s\n", hex_sk);
+    fprintf(fp_ans, "ct = %s\n\n", hex_ct);
+
+    fclose(fp_ans);
+    free(hex_pk);
+    free(hex_sk);
+    free(hex_ct);
+
+    printf("Test count = %d écrit avec succès dans %s\n", count, ans_file);
 }
 
-int main(void) {
-    uint8_t seed_keygen[32] = {0};
-    uint8_t seed_encrypt[32] = {2};
-
-    poly f; poly h; poly g; poly c; poly m = {{1}}; poly mpr;
-    m.coef[4] = -1; m.coef[71] = -1; m.coef[423] = 1; m.coef[555] = 1;
-
-    print_poly("m", &m);
-    ntru_hrss_keygen(&f, &h, seed_keygen);
-    ntru_hrss_encrypt(&c, &m, &h, seed_encrypt);
-    ntru_hrss_decrypt(&mpr, &c, &f);
-
-    print_poly("mpr", &mpr);
-
-    int8_t eq = 1;
-    for(size_t i = 0; i < N; i++){
-        eq &= (m.coef[i] == mpr.coef[i]);
+int main(int argc, char *argv[]) {
+    if (argc < 2) {
+        printf("Usage: %s <count>\n", argv[0]);
+        printf("Exemple: %s 0\n", argv[0]);
+        return 1;
     }
 
-    if (eq){printf("Encryption decryption success!!\n");}
+    int target_count = atoi(argv[1]);
 
-    poly code; int8_t bits[NTRU_CIPHERTEXTBYTES] = {{0}};
-    poly_zero(&code);
-    code.coef[4] = -1; code.coef[71] = -1; code.coef[423] = 1; code.coef[555] = 1;
+    const char *req_file = "PQCkemKAT_1450.req";
+    const char *ans_file = "PQCkemKAT_1450.ans";
 
-    print_poly("code Rq", &code);
-    Rq_encode(bits, &code);
-    Rq_decode(&code, bits);
-    print_poly("decode Rq", &code);
+    run_kat_test(target_count, req_file, ans_file);
 
-    int8_t bits2[140] = {{0}};
-    print_poly("code S3", &code);
-    S3_encode(bits2, &code);
-    S3_decode(&code, bits2);
-    print_poly("decode S3", &code);
-
-
-    return 1;
+    return 0;
 }

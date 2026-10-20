@@ -10,24 +10,18 @@
 #include "sample.h"
 
 int ntru_hrss_keygen(poly *f, poly *h, const uint8_t seed[32]){
-    poly g;poly fq;poly phi_1;poly three;
+    poly g; poly fq; poly phi_1; poly three;
 
-    uint8_t out[64];uint8_t seed_f[32];uint8_t seed_g[32];
-    uint8_t buf[33];
-    buf[0] = 0x00;              // préfixe "clé" (f, g)
-    memcpy(buf + 1, seed, 32);
-    shake256(out, 64, buf, 33);
+    uint8_t uniformbytes[2 * NTRU_SAMPLE_IID_BYTES]; // 1408 octets
 
-    memcpy(seed_f, out, 32);
-    memcpy(seed_g, out + 32, 32);
+    shake256(uniformbytes, sizeof(uniformbytes), seed, 32);
 
-    sample_T_plus(f, seed_f);
-    sample_T_plus(&g, seed_g);
+    sample_T(f, uniformbytes);
+    sample_T(&g, uniformbytes + NTRU_SAMPLE_IID_BYTES);
 
+    if (!poly_inv_q(&fq, f)){return 0;}
 
-    if (!poly_inv_q(&fq, f)){return 0;} // f_q = (1/f) mod q keygen échoue si = 0
-
-    poly_zero(&phi_1); phi_1.coef[0] = -1; phi_1.coef[1] = 1; //phi_1 = X - 1
+    poly_zero(&phi_1); phi_1.coef[0] = -1; phi_1.coef[1] = 1;
     poly_zero(&three); three.coef[0] = 3;
 
     poly_mul_q(h, &g, &phi_1);

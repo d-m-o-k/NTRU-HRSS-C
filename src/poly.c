@@ -253,8 +253,7 @@ int poly_inv_3(poly *res, const poly *a){
             C.coef[j] = (tC & mask2) | (tB & ~mask2);
         }
 
-        // Ratio = F_0 / G_0 dans Z_3 (F_0 * G_0 puisque l'inverse de ±1 est lui-même)
-        // Dans Z_3 : 1*1 = 1, (-1)*(-1) = 1, 1*(-1) = -1, (-1)*1 = -1
+        // f0/g0 pour supprimer le terme dominant dans Z3
         int16_t ratio = F.coef[0] * G.coef[0];
         int16_t mask_neg = -(ratio < 0);  // tout à 1 si ratio = -1
 
@@ -272,7 +271,8 @@ int poly_inv_3(poly *res, const poly *a){
             BB.coef[j] = (BB.coef[j] & ~mask_neg) | (BB2.coef[j] & mask_neg);
         }
 
-        // F = F si S=1, sinon FF ; B = B si S=1, sinon BB
+        // F = F si S=1, sinon FF
+        // B = B si S=1, sinon BB
         for (size_t j = 0; j < N; j++) {
             F.coef[j] = (F.coef[j] & maskS) | (FF.coef[j] & ~maskS);
             B.coef[j] = (B.coef[j] & maskS) | (BB.coef[j] & ~maskS);
@@ -408,7 +408,7 @@ int poly_inv_2(poly *res, const poly *a){
     return output;
 }
 
-//fonction de calcul d'un inverse modulo q (qu'on suppose égal à 8192 ici)
+//fonction de calcul d'un inverse modulo q (qu'on suppose égal à 8192 ici) via Hensel
 int poly_inv_q(poly *res, const poly *a){
     poly B;
     poly tempB;

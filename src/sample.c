@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "fips202.h"
 #include "sample.h"
 #include "param.h"
@@ -19,19 +20,15 @@ static inline int16_t centering_q(int64_t a){
     return a;
 }
 
-void sample_T(poly *res, const uint8_t seed[32]){
-    uint8_t ubytes[N - 1];
-    shake256(ubytes, sizeof(ubytes), seed, 32);
-
+void sample_T(poly *res, const uint8_t uniformbytes[NTRU_SAMPLE_IID_BYTES]){
     poly_zero(res);
-
     for(size_t i = 0; i < (N - 1)/2; i++){
         for(size_t j = 0; j < 2; j++){
-        int16_t x = ((((ubytes[i])>>(4*j))&1)
-                    + ((ubytes[i]>>(4*j + 1))&1)
-                    - ((ubytes[i]>>(4*j + 2))&1)
-                    - ((ubytes[i]>>(4*j + 3))&1)); //extraction du flux KAT-compatible et continue, selon la spec
-        res->coef[2*i+j] = centering_3(x);
+            int16_t x = (((uniformbytes[i]>>(4*j + 0))&1)
+                       + ((uniformbytes[i]>>(4*j + 1))&1)
+                       - ((uniformbytes[i]>>(4*j + 2))&1)
+                       - ((uniformbytes[i]>>(4*j + 3))&1));
+            res->coef[2*i+j] = centering_3(x);
         }
     }
 }
@@ -96,4 +93,14 @@ void sample_nonce_r(poly *res, const uint8_t seed[32]){
         res->coef[i] = tab[i];
     }
     res->coef[N - 1] = 0;
+}
+
+
+void sample_KAT_rm(poly *r, poly *m, const uint8_t seed[32]){
+    uint8_t uniformbytes[2 * NTRU_SAMPLE_IID_BYTES]; // 1408 octets
+
+    shake256(uniformbytes, sizeof(uniformbytes), seed, 32);
+
+    sample_T(r, uniformbytes);
+    sample_T(m, uniformbytes + NTRU_SAMPLE_IID_BYTES);
 }
